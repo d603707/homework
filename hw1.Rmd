@@ -1,0 +1,289 @@
+---
+output: pdf_document
+---
+
+
+output: pdf_document
+
+
+
+
+
+```{r}
+# import data
+setwd("C:\\Users\\Daniel\\Documents\\GitHub\\STA380\\data")
+georgia = read.csv("georgia2000.csv")
+```
+
+```{r}
+# calculate the percentage of undercount
+georgia$percent_undercount <- (georgia$ballots - georgia$votes)/georgia$ballots
+boxplot(percent_undercount~equip,data=georgia, main="% undercount vs. equipment", xlab="Equipment", ylab="Percentage of Undercount")
+```
+4 outliers effect optical as median percentage of undercount are similiar across the board. 
+```{r}
+
+#names(georgia)
+georgia=georgia[,c(-1,-2,-3)]
+
+lm.georgia = lm(percent_undercount~.,data=georgia)
+summary(lm.georgia)
+lm.georgia = lm(percent_undercount~.*poor,data=georgia)
+summary(lm.georgia)
+```
+
+punch cards and optical scans correlate with higher undercount percentages due to outliers in boxplot and whether or not someone is poor is also associated significantly.When interacting with whether poor interacted with the data, it showed that the most significant influence on undercount happens to be from whether someone was poor interacted with optical equipment. 
+
+so now we investigate whether the poor and AAs have been using equipment that results in higher undercount. 
+```{r}
+# plot equip against poor, perAA, and urban
+#xtabs(~georgia$equip+georgia$poor)
+plot(georgia$equip~georgia$poor, xlab = "Poor", ylab = "Equip")
+#xtabs(~georgia$equip+georgia$perAA)
+plot(georgia$equip~georgia$perAA, xlab = "PerAA", ylab = "Equip")
+```
+we found that people who weren't poor primarily used optical and punch which generated more undercounting and that the percentage of african americans had no strong relationship with equipment used. 
+
+
+
+part2: 
+
+```{r results='hide', message=FALSE, warning=FALSE}
+# import libraries
+library(mosaic)
+library(fImport)
+library(foreach)
+```
+
+```{r}
+# import five years of daily data on ETFs SPY, TLT, LQD, EEM, and VNQ
+funds = c("SPY", "TLT", "LQD", "EEM", "VNQ")
+prices = yahooSeries(funds, from='2009-01-01', to='2014-12-31')
+
+# add helper function for calculating percent returns from Yahoo Series
+YahooPricesToReturns = function(series) {
+	mycols = grep('Adj.Close', colnames(series))
+	closingprice = series[,mycols]
+	N = nrow(closingprice)
+	percentreturn = as.data.frame(closingprice[2:N,]) / as.data.frame(closingprice[1:(N-1),]) - 1
+	mynames = strsplit(colnames(percentreturn), '.', fixed=TRUE)
+	mynames = lapply(mynames, function(x) return(paste0(x[1], ".PctReturn")))
+	colnames(percentreturn) = mynames
+	as.matrix(na.omit(percentreturn))
+}
+
+# compute the returns from the closing prices
+returns = YahooPricesToReturns(prices)
+head(returns,5)
+
+# plot returns for each ETF and assess risk and return
+#plot(returns[,1], type='l',main='SPY')
+#plot(returns[,2], type='l',main='TLT')
+#plot(returns[,3], type='l',main='LQD')
+#plot(returns[,4], type='l',main='EEM')
+#plot(returns[,5], type='l',main='VNQ')
+# mean(returns[,1])
+#sd(returns[,1])
+```
+
+RISKY: VNQ and EEM have the biggest sd but EEM has a lower mean return then SPY. MEDIUM:SPY and TLT are around the same sd. SAFE: Lastly LQD has almost no sd with a stead mean return higher than TLT.
+
+
+
+
+```
+20 day return simulated using bootstrap for an 20% even split in portfolio amongst all ETF: ended at 103766.74
+```{r}
+# Perform bootstrap 5000 times for even split portfolio
+n_days=20
+set.seed(111)
+sim_even = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+
+```
+20 day return simulated using bootstrap for a safe portfolio on three assets: ended at 101846.04. Chose the ETFs that were medium to safe that had high mean returns.
+```{r}
+# Perform bootstrap 5000 times
+set.seed(111)
+sim_safe = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0.5, 0.1, 0.4, 0.0, 0.0)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+```
+20 day return simulated using bootstrap for a risky portfolio on two assets: ended at 109643.77. Chose the ETFs that were risky.
+```{r}
+# Perform bootstrap 5000 times 
+set.seed(111)
+sim_risky = foreach(i=1:5000, .combine='rbind') %do% {
+	totalwealth = 100000
+	weights = c(0.0, 0.0, 0.0, 0.3, 0.7)
+	holdings = weights * totalwealth
+	wealthtracker = rep(0, n_days)
+	for(today in 1:n_days) {
+		return.today = resample(returns, 1, orig.ids=FALSE)
+		holdings = holdings + holdings*return.today
+		totalwealth = sum(holdings)
+		wealthtracker[today] = totalwealth
+		holdings = weights * totalwealth
+	}
+	wealthtracker
+}
+
+```
+
+You get higher profit at a higher risk. Returns ranked from risky, even, to safe. Risk at 5% ranked from risky, even, to safe. Furthermore you can see that the variation of each distribution of profit/Loss ranked from risky, even, to safe.
+```{r}
+# risk at 5% level for each portfolio
+quantile(sim_even[,n_days], 0.05) - 100000
+quantile(sim_safe[,n_days], 0.05) - 100000
+quantile(sim_risky[,n_days], 0.05) - 100000
+hist(sim_even[,n_days]- 100000,xlab='Profit/Loss',main='Distribution of Even Split')
+hist(sim_safe[,n_days]- 100000,xlab='Profit/Loss',main='Distribution of Safe Split')
+hist(sim_risky[,n_days]- 100000,xlab='Profit/Loss',main='Distribution of Risky Split')
+```
+
+
+---
+part 3: 
+
+#PCA
+
+
+```{r}
+library(ggplot2)
+setwd("C:\\Users\\Daniel\\Documents\\GitHub\\STA380\\data")
+wine = read.csv("wine.csv")
+wineclus = wine[,c(-13,-12)]
+winepred = wine[,c(12,13)]
+wineclus = scale(wineclus, center=TRUE)
+pc1 = prcomp(wineclus, scale.=TRUE)
+
+# Look at the basic plotting and summary methods
+#pc1
+#summary(pc1)
+plot(pc1)
+#biplot(pc1)
+plot(pc1)
+
+
+
+# A more informative biplot
+loadings = pc1$rotation
+scores = pc1$x
+
+qplot(scores[,1], scores[,2] ,color=winepred$color, xlab='Component 1', ylab='Component 2')
+qplot(scores[,1], scores[,2] ,color=as.factor(winepred$quality), xlab='Component 1', ylab='Component 2')
+
+```
+
+#hierarchical 
+```{r}
+
+wineclus =  scale(wineclus, center=TRUE, scale=TRUE)
+# First form a pairwise distance matrix
+distance_between_wines= dist(wineclus)
+# Now run hierarchical clustering
+h1 = hclust(distance_between_wines, method='complete')
+# Cut the tree into 10 clusters
+cluster1 = cutree(h1, k=10)
+#summary(factor(cluster1))
+# Examine the cluster members
+ind1 = which(cluster1 == 2)
+ind2 = which(cluster1 == 6)
+
+# find distribution of wine color within each cluster
+table(winepred$color[ind1])
+table(winepred$color[ind2])
+
+```
+
+It makes more sense to use PCA since you only have to look at the first two PC loadings instead of sifting through each cluster when using hierarchical clustering. Wine quality isn't easily predicted using the dataset and can be easily shown by the qplot for wine quality above where you get quality index jumbled in each principal component. 
+
+
+part 4: 
+
+
+```{r}
+setwd("C:\\Users\\Daniel\\Documents\\GitHub\\STA380\\data")
+social_marketing = read.csv("social_marketing.csv",header=TRUE, row.names=1)
+social_marketing = social_marketing/rowSums(social_marketing)
+pc1 = prcomp(social_marketing,scale. = TRUE)
+
+# Look at the basic plotting and summary methods
+#pc1
+#summary(pc1)
+plot(pc1)
+
+# A more informative biplot
+loadings = pc1$rotation
+scores = pc1$x
+#since pc8 on variance is close to 1, clusters can be ignored
+o1 = order(loadings[,1])
+loadings[o1,1]
+#colnames(social_marketing)[head(o1,5)]
+colnames(social_marketing)[tail(o1,5)]
+o2 = order(loadings[,2])
+#loadings[o2,2]
+#colnames(social_marketing)[head(o2,5)]
+colnames(social_marketing)[tail(o2,5)]
+o3 = order(loadings[,3])
+#loadings[o3,3]
+#colnames(social_marketing)[head(o3,5)]
+colnames(social_marketing)[tail(o3,5)]
+o4 = order(loadings[,4])
+#loadings[o4,4]
+#colnames(social_marketing)[head(o4,5)]
+colnames(social_marketing)[tail(o4,5)]
+o5 = order(loadings[,5])
+#loadings[o5,5]
+#colnames(social_marketing)[head(o5,5)]
+colnames(social_marketing)[tail(o5,5)]
+o6 = order(loadings[,6])
+#loadings[o6,6]
+#colnames(social_marketing)[head(o6,5)]
+colnames(social_marketing)[tail(o6,5)]
+o7 = order(loadings[,7])
+#loadings[o7,7]
+#colnames(social_marketing)[head(o7,5)]
+colnames(social_marketing)[tail(o7,5)]
+o8 = order(loadings[,8])
+#loadings[o8,8]
+#colnames(social_marketing)[head(o8,5)]
+colnames(social_marketing)[tail(o8,5)]
+
+```
+ 
+Your biggest group of supporters love sportsfandom, religion, and parenting from the PCA study.
+
+
+
+```{r, echo=FALSE}
+my_favorite_seed = 1234567
+set.seed(my_favorite_seed)
+rnorm(10)
+set.seed(my_favorite_seed)
+rnorm(10)
+```
+
