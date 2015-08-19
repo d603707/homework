@@ -186,10 +186,28 @@ pca_compare$same[c(ind)] = 1.0
 pca_Per_accuracy = sum(pca_compare$same)/length(pca_compare$same)
 head(pca_compare)
 
+#random forest
+library(randomForest)
+library(caret)
+library(e1071)
+randomforest = randomForest(x= X, y= as.factor(labels), mtry = 37, ntree=200)
+rfpredict = predict(randomforest, data = X_test)
+confusionrf = confusionMatrix(table(rfpredict, labels))
+confusionrf$overall
+rf_compare =cbind.data.frame(labels,rfpredict)
+rf_compare$same = 0.0
+mask = (rf_compare$labels == rf_compare$rfpredict)
+ind = which(mask %in% TRUE)
+rf_compare$same[c(ind)] = 1.0
+rf_Per_accuracy = sum(rf_compare$same)/length(rf_compare$same)
+
+rffinal <- ddply(rf_compare, .(labels), transform, sum.n = length(length))
+rfxtab<-ddply(rffinal, .(labels, rfpredict), summarise, n = length(rfpredict), prop = n / 50* 100)
+head(rfxtab)
 
 ```
 
-The models used were Naive Bayes and PCA multinomial logistic regression. The PCA method had a 32% accuracy on the test data while the Naive Bayes had a 61% accuracy.Sidenote: couldn't get the PCA to use more than 15 vectors for multinomial. Thus, Naive Bayes was a better method to use. 
+The models used were Naive Bayes and PCA multinomial logistic regression. The PCA method had a 32% accuracy, Naive Bayes had a 61% accuracy, and random forest had a 77% accuracy with mtry of 37 and 200 trees.Sidenote: couldn't get the PCA to use more than 15 vectors for multinomial. Thus, Random Forest was a better method to use. Different Authors were predicted the worst for each method. 
 
 ```{r,warning= FALSE}
 # Association rule mining
