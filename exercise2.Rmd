@@ -1,0 +1,237 @@
+---
+title: "exercise2"
+output: pdf_document
+---
+
+
+```{r,warning=FALSE}
+
+airport <- read.csv("../data/ABIA.csv")
+names(airport)
+#what are the bad airports to fly to
+#aggregate by aiport and see mean arrival delays
+airport[is.na(airport)] <- 0
+airport[is.null(airport)] <- 0
+destair = aggregate(airport, by = list(airport$Dest),FUN = mean, na.rm = TRUE)
+#grouped by destination and looking at arrival time delay and distance
+df = cbind.data.frame(destair$ArrDelay,destair$Distance) 
+df = cbind.data.frame(df, destair$Group.1)
+#df[is.na(df)] <- 0
+#df[is.null(df)] <- 0
+names(df) <- c("arrival_delay","distance", "dest_airport")
+head(df)
+order.delay <- order(df$arrival_delay,decreasing=TRUE)
+order.distance <- order(df$distance,decreasing=TRUE)
+df.delay = df[order.delay,]
+df.distance = df[order.distance,]
+#delay by airport
+head(df.delay)
+```
+
+
+The above shows the destination airports with the highest delay mean.
+
+
+
+```{r,warning=FALSE}
+#training dataset to find model
+library(tm) 
+library(plyr)
+library(nnet)
+#read in english files
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), 
+            id=fname, language='en') }
+
+#get authors from files
+author_dirs = Sys.glob('../data/ReutersC50/C50train/*')
+file_list = NULL
+labels = NULL
+for(author in author_dirs) {
+  author_name = substring(author, first=29)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels = append(labels, rep(author_name, length(files_to_add)))
+}
+
+
+# Need a more clever regex to get better names here
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+#make into corpus
+my_corpus = Corpus(VectorSource(all_docs))
+names(my_corpus) = file_list
+
+# Preprocessing
+my_corpus = tm_map(my_corpus, content_transformer(tolower)) # make everything lowercase
+my_corpus = tm_map(my_corpus, content_transformer(removeNumbers)) # remove numbers
+my_corpus = tm_map(my_corpus, content_transformer(removePunctuation)) # remove punctuation
+my_corpus = tm_map(my_corpus, content_transformer(stripWhitespace)) ## remove excess white-space
+my_corpus = tm_map(my_corpus, content_transformer(removeWords), stopwords("SMART"))
+
+DTM = DocumentTermMatrix(my_corpus)
+class(DTM)
+DTM = removeSparseTerms(DTM, 0.975)
+X = as.matrix(DTM)
+
+
+#get word probability vector for each author 
+# AP's multinomial probability vector
+# Notice the smoothing factor
+# Why?
+smooth_count = 1/nrow(X)
+w_All = rowsum(X + smooth_count,labels)
+w_All = w_All/rowSums(w_All)
+w_All = log(w_All)
+
+
+
+
+
+
+#do the same for the test set without the last step of making probability vector
+
+
+
+
+
+
+#get authors from files
+author_dirs_test = Sys.glob('../data/ReutersC50/C50test/*')
+file_list = NULL
+labels = NULL
+for(author in author_dirs_test) {
+  author_name = substring(author, first=28)
+  files_to_add = Sys.glob(paste0(author, '/*.txt'))
+  file_list = append(file_list, files_to_add)
+  labels = append(labels, rep(author_name, length(files_to_add)))
+}
+
+
+# Need a more clever regex to get better names here
+all_docs = lapply(file_list, readerPlain) 
+names(all_docs) = file_list
+names(all_docs) = sub('.txt', '', names(all_docs))
+
+#make into corpus
+my_corpus_test = Corpus(VectorSource(all_docs))
+names(my_corpus_test) = file_list
+
+# Preprocessing
+my_corpus_test = tm_map(my_corpus_test, content_transformer(tolower)) # make everything lowercase
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeNumbers)) # remove numbers
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removePunctuation)) # remove punctuation
+my_corpus_test = tm_map(my_corpus_test, content_transformer(stripWhitespace)) ## remove excess white-space
+my_corpus_test = tm_map(my_corpus_test, content_transformer(removeWords), stopwords("SMART"))
+
+
+train_names_dict = NULL
+train_names_dict = dimnames(DTM)[[2]]
+#Create testing DTM & matrix using train words only
+DTM_test = DocumentTermMatrix(my_corpus_test, list(dictionary=train_names_dict))
+#DTM_test = removeSparseTerms(DTM_test, 0.975)
+X_test = as.matrix(DTM_test)
+
+
+#get the log probabilities of X_test using train naive bayes model
+prob = X_test %*% t(w_All)
+prediction<- colnames(prob)[apply(prob,1,which.max)]
+#head(prob)
+actual = labels
+
+#make a final comparison matrix and find accuracy of prediction
+
+compare =cbind.data.frame(actual,prediction)
+compare2 = compare
+compare2$same = 0.0
+mask = (compare2$actual == compare2$prediction)
+ind = which(mask %in% TRUE)
+compare2$same[c(ind)] = 1.0
+Per_accuracy = sum(compare2$same)/length(compare2$same)
+final <- ddply(compare, .(actual), transform, sum.n = length(actual))
+xtab<-ddply(final, .(actual, prediction), summarise, n = length(prediction), prop = n / sum.n[1] * 100)
+
+head(compare2)
+#second model PCA multinomial logistic regression 
+pc_Xtrain = prcomp(X, scale=TRUE)
+pc_Xtest = prcomp(X_test, scale=TRUE)
+K = 15
+#rotation vectors
+V_train = pc_Xtrain$rotation[,1:K]
+#V_test = pc_Xtest$rotation[,1:K]
+
+
+#get scores to model off of
+scores_train = X %*% V_train
+scores_test = predict(pc_Xtrain,X_test)
+
+dftrain =cbind.data.frame(labels,scores_train)
+dftest =cbind.data.frame(labels,scores_test)
+
+#multinomial logistics regression
+
+model <- multinom(labels ~., dftrain)
+#plot(pc_Xtrain)
+#pc_Xtrain$sdev
+
+prediction =predict(model,dftest)
+
+pca_compare =cbind.data.frame(labels,prediction)
+pca_compare$same = 0.0
+mask = (pca_compare$labels == pca_compare$prediction)
+ind = which(mask %in% TRUE)
+pca_compare$same[c(ind)] = 1.0
+pca_Per_accuracy = sum(pca_compare$same)/length(pca_compare$same)
+head(pca_compare)
+
+
+```
+
+The models used were Naive Bayes and PCA multinomial logistic regression. The PCA method had a 32% accuracy on the test data while the Naive Bayes had a 61% accuracy.Sidenote: couldn't get the PCA to use more than 15 vectors for multinomial. Thus, Naive Bayes was a better method to use. 
+
+```{r,warning= FALSE}
+# Association rule mining
+# Adapted from code by Matt Taddy
+library(arules)  # has a big ecosystem of packages built around it
+library(reshape)
+# Read in playlists from users
+#grocery = read.table("../data/groceries.txt", header = FALSE, sep = ",", col.names = paste0("V",seq_len(10)), fill = TRUE)
+grocery2 <- file("../data/groceries.txt")
+grocery = strsplit(readLines(grocery2),",")
+close(grocery2)
+
+#n = dim(grocery)[1]
+#id = c(1:n)
+#grocery = cbind(id,grocery)
+#grocery$id <- factor(grocery$id)
+#grocery = melt(grocery,id = 'id')
+
+# First create a list of baskets: vectors of items by consumer
+# Analagous to bags of words
+
+# First split data into a list of artists for each user
+#grocery2 <- split(x=grocery$value, f=grocery$id)
+#head(grocery2)
+## Remove duplicates ("de-dupe")
+grocery <- lapply(grocery, unique)
+
+## Cast this variable as a special arules "transactions" class.
+grocery <- as(grocery, "transactions")
+
+# Now run the 'apriori' algorithm
+# Look at rules with support > .01 & confidence >.5 & length (# artists) <= 4
+grocery2 <- apriori(grocery, parameter=list(support=.01, confidence=.2, maxlen=4))
+
+# Look at the output
+inspect(grocery2)
+
+## Choose a subset
+
+inspect(subset(grocery2, subset=support > .01 & confidence > 0.5 & lift>2))
+
+
+```
+
+you can tell that whole milk was usually predicted.
